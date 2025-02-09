@@ -18,8 +18,8 @@ from aiogram.utils import executor
 CRASH_HISTORY_URL = "https://1xbit.com/fr/allgamesentrance/crash"
 
 # 🔹 بيانات Telegram Bot
-TELEGRAM_BOT_TOKEN = "YOUR_TELEGRAM_BOT_TOKEN"
-CHAT_ID = "YOUR_CHAT_ID"
+TELEGRAM_BOT_TOKEN = "6768620123:AAE8-vG9GKbLI9LvP0yqOaFLNThtPgrG5kE"
+CHAT_ID = "1722250078"
 
 bot = Bot(token=TELEGRAM_BOT_TOKEN)
 dp = Dispatcher(bot)
