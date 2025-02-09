@@ -7,4 +7,4 @@ seaborn
 tensorflow
 keras
 scikit-learn
-aiogram 2.25.1
+aiogram==2.25.1
