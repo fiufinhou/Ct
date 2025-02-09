@@ -1,150 +1,191 @@
-import requests
-from bs4 import BeautifulSoup
-import numpy as np
-import pandas as pd
 import time
-import asyncio
-import matplotlib.pyplot as plt
-import seaborn as sns
+import json
+import numpy as np
+import requests
+import telebot
 import tensorflow as tf
-from tensorflow import keras
+import xgboost as xgb
+import simpleaudio as sa
+import websocket
+import re
+import random
+import datetime
+from collections import deque
 from tensorflow.keras.models import Sequential
 from tensorflow.keras.layers import LSTM, Dense, Dropout
 from sklearn.preprocessing import MinMaxScaler
-from aiogram import Bot, Dispatcher, types
-from aiogram.utils import executor
+from selenium import webdriver
+from selenium.webdriver.chrome.service import Service
+from selenium.webdriver.chrome.options import Options
+from selenium.webdriver.common.by import By
+from webdriver_manager.chrome import ChromeDriverManager
 
-# 🔹 رابط بيانات كراش (يجب تعديله حسب الموقع)
-CRASH_HISTORY_URL = "https://1xbit.com/fr/allgamesentrance/crash"
+# ✅ إعداد متصفح Selenium لسحب بيانات اللعبة
+chrome_options = Options()
+chrome_options.add_argument("--headless")
+chrome_options.add_argument("--disable-gpu")
+chrome_options.add_argument("--no-sandbox")
 
-# 🔹 بيانات Telegram Bot
-TELEGRAM_BOT_TOKEN = "6768620123:AAE8-vG9GKbLI9LvP0yqOaFLNThtPgrG5kE"
-CHAT_ID = "1722250078"
+driver = webdriver.Chrome(service=Service(ChromeDriverManager().install()), options=chrome_options)
+driver.get("https://www.1xbit.com")
 
-bot = Bot(token=TELEGRAM_BOT_TOKEN)
-dp = Dispatcher(bot)
+# ✅ إعداد Telegram Bot للإشعارات
+TELEGRAM_BOT_TOKEN = "YOUR_TELEGRAM_BOT_TOKEN"
+TELEGRAM_CHAT_ID = "YOUR_CHAT_ID"
+bot = telebot.TeleBot(TELEGRAM_BOT_TOKEN)
 
-# 🔍 دالة لجلب بيانات كراش
-def get_crash_history():
-    headers = {"User-Agent": "Mozilla/5.0"}
-    response = requests.get(CRASH_HISTORY_URL, headers=headers)
+# ✅ قائمة لتخزين بيانات الانهيار وتحليلها
+crash_data = []
+time_intervals = []
+market_trends = []
+player_activity = []
+chat_messages = []
+scaler = MinMaxScaler(feature_range=(0, 1))
+prev_time = time.time()
 
+# ✅ اتصال WebSocket لجمع نشاط اللاعبين
+def on_message(ws, message):
+    data = json.loads(message)
+    if "player" in data:
+        player_activity.append(data["player"])
+    if "chat" in data:
+        chat_messages.append(data["chat"])
+
+ws = websocket.WebSocketApp("wss://game-server.example.com", on_message=on_message)
+ws.run_forever()
+
+# ✅ تحليل السوق وجمع بيانات تقلبات العملات الرقمية
+def get_market_trend():
+    response = requests.get("https://api.coingecko.com/api/v3/simple/price?ids=bitcoin,ethereum&vs_currencies=usd")
     if response.status_code == 200:
-        soup = BeautifulSoup(response.text, "html.parser")
-        crash_results = soup.find_all("div", class_="crash-result")
-        crash_values = [float(result.text.strip()) for result in crash_results[:1000]]  # تجميع 1000 جولة
+        market_data = response.json()
+        return (market_data["bitcoin"]["usd"], market_data["ethereum"]["usd"])
+    return None
 
-        return crash_values[::-1]  # ترتيب البيانات من الأقدم للأحدث
-    else:
-        print("❌ فشل في جلب البيانات")
-        return []
+# ✅ إنشاء نموذج Reinforcement Learning باستخدام DQN
+class DQNAgent:
+    def __init__(self, state_size, action_size):
+        self.state_size = state_size
+        self.action_size = action_size
+        self.memory = deque(maxlen=2000)
+        self.gamma = 0.95
+        self.epsilon = 1.0
+        self.epsilon_min = 0.01
+        self.epsilon_decay = 0.995
+        self.model = self._build_model()
 
-# 📊 تحليل الإحصائيات والأنماط
-def analyze_patterns(crash_values):
-    df = pd.DataFrame({"Multiplier": crash_values})
+    def _build_model(self):
+        model = Sequential([
+            Dense(24, activation='relu', input_dim=self.state_size),
+            Dense(24, activation='relu'),
+            Dense(self.action_size, activation='linear')
+        ])
+        model.compile(optimizer='adam', loss='mse')
+        return model
 
-    mean_value = np.mean(crash_values)
-    std_dev = np.std(crash_values)
-    min_value = np.min(crash_values)
-    max_value = np.max(crash_values)
+    def act(self, state):
+        if np.random.rand() <= self.epsilon:
+            return np.random.randint(self.action_size)
+        q_values = self.model.predict(state)
+        return np.argmax(q_values[0])
 
-    print(f"📊 **إحصائيات كراش:**")
-    print(f"✔️ المتوسط الحسابي: {round(mean_value, 2)}X")
-    print(f"📉 أقل قيمة انهيار: {min_value}X")
-    print(f"📈 أعلى قيمة انهيار: {max_value}X")
-    print(f"📊 التباين: {round(std_dev, 2)}")
+agent = DQNAgent(state_size=3, action_size=3)
 
-# 🔍 تحليل البيانات بصريًا
-def visualize_data(crash_values):
-    plt.figure(figsize=(10, 5))
-    sns.histplot(crash_values, bins=30, kde=True, color="blue")
-    plt.title("🔍 توزيع قيم Crash")
-    plt.xlabel("Multiplier")
-    plt.ylabel("Frequency")
-    plt.grid(True)
-    plt.show()
+# ✅ تدريب نموذج LSTM + XGBoost مع تحليل السوق ونشاط اللاعبين
+def train_models():
+    if len(crash_data) < 50:
+        return None, None
 
-# 🔮 بناء نموذج LSTM لتحليل الأنماط والتوقع
-def train_lstm_model(crash_values):
-    if len(crash_values) < 50:
-        return None, "❌ بيانات غير كافية للتدريب."
-
-    df = pd.DataFrame({"crash_value": crash_values})
-
-    # تطبيع البيانات
-    scaler = MinMaxScaler(feature_range=(0, 1))
+    df = np.array(crash_data).reshape(-1, 1)
     df_scaled = scaler.fit_transform(df)
 
-    # تحضير البيانات للنموذج
     X, y = [], []
-    sequence_length = 10  # استخدام آخر 10 جولات للتوقع
-
-    for i in range(len(df_scaled) - sequence_length):
-        X.append(df_scaled[i:i + sequence_length])
-        y.append(df_scaled[i + sequence_length])
+    for i in range(len(df_scaled) - 10):
+        X.append(df_scaled[i:i+10, 0])
+        y.append(df_scaled[i+10, 0])
 
     X, y = np.array(X), np.array(y)
+    X = np.reshape(X, (X.shape[0], X.shape[1], 1))
 
-    # بناء نموذج LSTM
-    model = Sequential([
+    # ✅ نموذج LSTM
+    lstm_model = Sequential([
         LSTM(50, return_sequences=True, input_shape=(X.shape[1], 1)),
         Dropout(0.2),
         LSTM(50, return_sequences=False),
         Dropout(0.2),
+        Dense(25),
         Dense(1)
     ])
+    lstm_model.compile(optimizer='adam', loss='mean_squared_error')
+    lstm_model.fit(X, y, epochs=50, batch_size=16, verbose=1)
 
-    model.compile(optimizer="adam", loss="mse")
-    model.fit(X, y, epochs=20, batch_size=16, verbose=1)
+    # ✅ نموذج XGBoost
+    xgb_model = xgb.XGBRegressor(n_estimators=100, learning_rate=0.1, max_depth=5)
+    xgb_model.fit(X.reshape(X.shape[0], -1), y)
 
-    return model, scaler
+    return lstm_model, xgb_model
 
-# 🔮 توقع الجولة القادمة باستخدام LSTM
-def predict_next_crash_lstm(crash_values, model, scaler):
-    if model is None:
-        return "❌ لا يمكن التنبؤ بسبب نقص البيانات."
-
-    last_values = np.array(crash_values[-10:]).reshape(1, 10, 1)
-    last_values_scaled = scaler.transform(last_values.reshape(-1, 1)).reshape(1, 10, 1)
-
-    predicted_scaled = model.predict(last_values_scaled)
-    predicted_value = scaler.inverse_transform(predicted_scaled.reshape(-1, 1))[0][0]
-
-    return f"🔮 **توقع الجولة القادمة (LSTM):** {round(predicted_value, 2)}X"
-
-# 📢 إرسال إشعار تيليجرام عند توقع جولة جيدة
-async def send_telegram_alert(prediction):
-    message = f"🚀 **إشعار كراش** 🚀\n{prediction}"
-    await bot.send_message(CHAT_ID, message)
-
-# 🔄 تسجيل البيانات وتحليلها بشكل دوري
-async def record_crash_data():
-    while True:
-        crash_data = get_crash_history()
-
-        if crash_data:
-            print(f"📊 آخر 10 نتائج: {crash_data[-10:]}")
-            analyze_patterns(crash_data)
-            visualize_data(crash_data)
-
-            model, scaler = train_lstm_model(crash_data)
-            prediction = predict_next_crash_lstm(crash_data, model, scaler)
-
-            print(prediction)
-            await send_telegram_alert(prediction)  # ✅ تشغيل التزامني بشكل صحيح
-
-        await asyncio.sleep(10)  # ✅ استخدام `await` بدلاً من `time.sleep()`
-
-# ✅ تشغيل التحليل داخل `asyncio`
-async def main():
-    task1 = asyncio.create_task(record_crash_data())  # تشغيل التسجيل بشكل منفصل
-    task2 = dp.start_polling()  # تشغيل بوت تيليجرام
-
-    await asyncio.gather(task1, task2)
-
-# ✅ تشغيل الكود بأمان في أي بيئة
-if __name__ == "__main__":
+# ✅ استخراج بيانات اللعبة وتحليل تأثير نشاط اللاعبين
+def scrape_multiplier():
+    global prev_time
     try:
-        asyncio.run(main())  # ✅ استخدام `asyncio.run()` بشكل صحيح
-    except KeyboardInterrupt:
-        print("❌ تم إيقاف البرنامج يدويًا.")
+        element = driver.find_element(By.CLASS_NAME, "crash-multiplier")
+        multiplier = float(element.text.replace("x", ""))
+
+        # ✅ تحليل الزمن بين الجولات
+        current_time = time.time()
+        interval = current_time - prev_time
+        prev_time = current_time
+        time_intervals.append(interval)
+
+        return multiplier
+    except:
+        return None
+
+# ✅ تحليل نصوص الدردشة لاستخلاص مؤشرات الرهان
+def analyze_chat():
+    chat_text = " ".join(chat_messages[-20:]).lower()
+    if re.search(r"(crash|pump|dump)", chat_text):
+        return True
+    return False
+
+# ✅ تشغيل النظام لتحليل البيانات
+while True:
+    multiplier = scrape_multiplier()
+    if multiplier:
+        crash_data.append(multiplier)
+        market_data = get_market_trend()
+        is_chat_suspicious = analyze_chat()
+
+        # ✅ تدريب النماذج عند توفر بيانات كافية
+        lstm_model, xgb_model = train_models()
+        if lstm_model and xgb_model:
+            X_pred = np.array([[multiplier]])
+            X_pred = scaler.transform(X_pred)
+            X_pred = np.reshape(X_pred, (1, 1, 1))
+
+            predicted_lstm = lstm_model.predict(X_pred)[0][0]
+            predicted_lstm = scaler.inverse_transform([[predicted_lstm]])[0][0]
+
+            predicted_xgb = xgb_model.predict(X_pred.reshape(1, -1))[0]
+
+            # ✅ استخدام Reinforcement Learning لاختيار القرار الأفضل
+            state = np.array([[multiplier, market_data[0], market_data[1]]])
+            action = agent.act(state)
+
+            if action == 0 or is_chat_suspicious:
+                advice = "🚨 تجنب المراهنة (انهيار مبكر محتمل)"
+            elif action == 1:
+                advice = "✅ فرصة متوسطة، انسحب مبكرًا"
+            else:
+                advice = "🚀 فرصة لرهان أطول، لكن كن حذرًا!"
+
+            print(advice)
+            bot.send_message(TELEGRAM_CHAT_ID, advice)
+
+            # ✅ تنبيه صوتي عند انهيارات خطيرة
+            if predicted_lstm < 1.5 or predicted_xgb < 1.5:
+                wave_obj = sa.WaveObject.from_wave_file("alert.wav")
+                play_obj = wave_obj.play()
+
+    time.sleep(2)
