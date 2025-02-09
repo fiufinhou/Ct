@@ -118,7 +118,7 @@ async def send_telegram_alert(prediction):
     await bot.send_message(CHAT_ID, message)
 
 # 🔄 تسجيل البيانات وتحليلها بشكل دوري
-def record_crash_data():
+async def record_crash_data():
     while True:
         crash_data = get_crash_history()
 
@@ -131,10 +131,20 @@ def record_crash_data():
             prediction = predict_next_crash_lstm(crash_data, model, scaler)
 
             print(prediction)
-            asyncio.run(send_telegram_alert(prediction))
+            await send_telegram_alert(prediction)  # ✅ تشغيل التزامني بشكل صحيح
 
-        time.sleep(10)  # تحديث كل 10 ثوانٍ
+        await asyncio.sleep(10)  # ✅ استخدام `await` بدلاً من `time.sleep()`
 
-# تشغيل التحليل
+# ✅ تشغيل التحليل داخل `asyncio`
+async def main():
+    task1 = asyncio.create_task(record_crash_data())  # تشغيل التسجيل بشكل منفصل
+    task2 = dp.start_polling()  # تشغيل بوت تيليجرام
+
+    await asyncio.gather(task1, task2)
+
+# ✅ تشغيل الكود بأمان في أي بيئة
 if __name__ == "__main__":
-    record_crash_data()
+    try:
+        asyncio.run(main())  # ✅ استخدام `asyncio.run()` بشكل صحيح
+    except KeyboardInterrupt:
+        print("❌ تم إيقاف البرنامج يدويًا.")
